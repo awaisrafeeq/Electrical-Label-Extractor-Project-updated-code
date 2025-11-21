@@ -781,10 +781,10 @@
         const dsgCount = data.dsg_count ?? data.dsg ?? 0;
         const excelUrlRaw = data.excel_url || data.excelUrl || data.output_url;
         const excelUrl = excelUrlRaw
-          ? (excelUrlRaw.startsWith("http")
-              ? excelUrlRaw
-              : new URL(excelUrlRaw, endpointUrl).toString())
-          : null;
+                  ? (excelUrlRaw.startsWith("http")
+                      ? excelUrlRaw
+                      : new URL(excelUrlRaw, window.location.origin).toString())
+                  : null;
 
         const baseText = "Extraction finished successfully, I parsed your PDF and created an Excel file with the equipment list and connection mapping.";
 
