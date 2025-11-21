@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from extract_equipment_simple import main  # Ensure that the extraction function is correct
-
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 # ... (existing code)
 
@@ -19,7 +19,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 # Folder where Excel files will be saved
 OUTPUT_DIR = Path("outputs")
