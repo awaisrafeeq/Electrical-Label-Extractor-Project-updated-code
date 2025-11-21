@@ -5,9 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from extract_equipment_simple import main  # Ensure that the extraction function is correct
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-# ... (existing code)
 
 app = FastAPI()
 
@@ -19,16 +16,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
-# Folder where Excel files will be saved
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Serve the Excel files so the frontend can download them
-app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
-
-
+# Define API endpoints FIRST (before any mounts)
 @app.post("/extract")
 async def extract_equipment(file: UploadFile = File(...)):
     """
@@ -44,7 +33,7 @@ async def extract_equipment(file: UploadFile = File(...)):
     # Unique file name for the output Excel file
     timestamp = int(time.time())
     output_name = f"equipment_data_{timestamp}.xlsx"
-    output_path = OUTPUT_DIR / output_name
+    output_path = Path("outputs") / output_name
 
     try:
         # Call the existing main function from the extraction logic
@@ -78,3 +67,11 @@ async def extract_equipment(file: UploadFile = File(...)):
             status_code=500,
             content={"detail": f"Extraction failed. {str(e)}"},
         )
+
+# Folder where Excel files will be saved (created at runtime if needed)
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Mount static directories LAST (after API endpoints)
+app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
