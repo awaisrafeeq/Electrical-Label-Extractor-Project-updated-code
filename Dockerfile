@@ -11,6 +11,9 @@ WORKDIR /app
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create the outputs directory (add this line)
+RUN mkdir -p /app/outputs
+
 # Expose port (Render sets $PORT)
 EXPOSE 8000
 
