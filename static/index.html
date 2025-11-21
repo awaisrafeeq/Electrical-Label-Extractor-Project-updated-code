@@ -24,7 +24,6 @@
       --sidebar-border: #e5e7eb;
       --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.12);
       --radius-lg: 10px;
-      --radius-md: 6px;
     }
 
     * {
@@ -49,6 +48,93 @@
       height: 100vh;
       width: 100%;
       overflow: hidden;
+    }
+
+    /* Sidebar */
+
+    .sidebar {
+      width: 260px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 12px;
+    }
+
+    .sidebar-header {
+      border-radius: var(--radius-lg);
+      padding: 10px 12px;
+      border: 1px solid #d4d4dd;
+      background: linear-gradient(135deg, #ffffff, #f3f4f6);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .sidebar-header span.icon {
+      font-size: 18px;
+    }
+
+    .sidebar-header span.text {
+      font-size: 13px;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 8px 4px 4px;
+    }
+
+    .sidebar-item {
+      padding: 6px 8px;
+      border-radius: var(--radius-lg);
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .sidebar-item:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .sidebar-item .icon {
+      font-size: 15px;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      border-top: 1px solid var(--sidebar-border);
+      padding-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sidebar-footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 4px 2px;
+    }
+
+    .badge-small {
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid #d4d4dd;
+      font-size: 10px;
+      color: var(--text-muted);
+      background: #f3f4f6;
     }
 
     /* Main chat area */
@@ -224,32 +310,38 @@
       align-items: center;
       gap: 6px;
       margin-top: 8px;
-      padding: 8px 12px;
-      border-radius: var(--radius-md);
+      padding: 6px 10px;
+      border-radius: 999px;
       border: 1px solid var(--accent-border);
       background: #ffffff;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--accent);
       text-decoration: none;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(16, 163, 127, 0.1);
     }
 
     .download-btn:hover {
       background: var(--accent-soft);
-      box-shadow: 0 4px 8px rgba(16, 163, 127, 0.15);
     }
 
     /* Input area */
 
     .chat-input-wrapper {
       position: fixed;
-      left: 0;
+      left: 260px;
       right: 0;
       bottom: 0;
       padding: 10px 16px 16px;
       background: linear-gradient(to top, rgba(247, 247, 248, 1), rgba(247, 247, 248, 0.96), transparent);
       border-top: 1px solid #e5e7eb;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+      .chat-input-wrapper {
+        left: 0;
+      }
     }
 
     .chat-input-inner {
@@ -282,29 +374,27 @@
     }
 
     .attach-btn {
-      width: 36px;
-      height: 36px;
+      width: 28px;
+      height: 28px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       border: none;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 18px;
-      transition: all 0.2s ease;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 16px;
     }
 
     .attach-btn:hover {
-      background: var(--accent-soft-2);
-      color: var(--accent);
-      box-shadow: 0 2px 4px rgba(16, 163, 127, 0.2);
+      background: #f3f4f6;
+      color: #111827;
     }
 
     .send-btn {
-      width: 36px;
-      height: 36px;
+      width: 30px;
+      height: 30px;
       border-radius: 999px;
       border: none;
       display: inline-flex;
@@ -313,14 +403,7 @@
       cursor: pointer;
       background: var(--accent);
       color: #ffffff;
-      font-size: 18px;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(16, 163, 127, 0.3);
-    }
-
-    .send-btn:hover {
-      background: #0d8c6e;
-      box-shadow: 0 4px 8px rgba(16, 163, 127, 0.4);
+      font-size: 16px;
     }
 
     .send-btn:disabled {
@@ -384,20 +467,12 @@
     }
 
     .pagination button {
-      padding: 8px 14px;
+      padding: 6px 12px;
       border: 1px solid var(--accent-border);
       background: #ffffff;
       color: var(--accent);
-      border-radius: var(--radius-md);
+      border-radius: 999px;
       cursor: pointer;
-      font-size: 13px;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(16, 163, 127, 0.1);
-    }
-
-    .pagination button:hover {
-      background: var(--accent-soft);
-      box-shadow: 0 4px 8px rgba(16, 163, 127, 0.15);
     }
 
     .pagination button:disabled {
@@ -413,6 +488,35 @@
 </head>
 <body>
   <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="icon">＋</span>
+        <span class="text">New extraction</span>
+      </div>
+
+      <div class="sidebar-section-title">Recent</div>
+      <div class="sidebar-item">
+        <span class="icon">📄</span>
+        <span>MEDIUM VOLTAGE.pdf</span>
+      </div>
+      <div class="sidebar-item">
+        <span class="icon">📄</span>
+        <span>Sample diagram.pdf</span>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-row">
+          <span>Mode</span>
+          <span class="badge-small">PDF → Excel</span>
+        </div>
+        <div class="sidebar-footer-row">
+          <span>Backend</span>
+          <span class="badge-small">FastAPI . /extract</span>
+        </div>
+      </div>
+    </aside>
+
     <!-- Main chat column -->
     <main class="chat">
       <div class="chat-header">
@@ -451,7 +555,7 @@
                 autocomplete="off"
               />
               <button type="submit" id="sendBtn" class="send-btn" title="Send">
-                ➤
+                ⬆
               </button>
               <input
                 type="file"
@@ -472,7 +576,7 @@
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script>
-    const endpointUrl = "/extract";
+    const endpointUrl = "http://127.0.0.1:8001/extract";
 
     const chatWindow = document.getElementById("chatWindow");
     const chatForm = document.getElementById("chatForm");
