@@ -1,36 +1,89 @@
 """
-Electrical Equipment Data Extractor - Complete with Connection Logic
+Electrical Equipment Data Extractor - WITH AUTOMATIC COLOR SEQUENCE
 Extracts SERVICE SWITCHGEAR and DISTRIBUTION SWITCHGEAR with automatic connection mapping
-Populates "Primary From" and "Alternate From" based on position and group
+AND applies equipment colors based on their position in the sequence
+
+COLOR LOGIC (Verified from PDF):
+- SERVICE SWITCHGEAR (MVS): Black
+- DISTRIBUTION SWITCHGEAR (DSG): Sequential colors based on position
+  
+  Page 1 Pattern:
+  Row 1: Black (DSGAH110 first), Red, Blue, Orange, Pink, Purple, Yellow, [Light Grey not shown]
+  Row 2: Red, Blue, Orange, Pink, Purple, Yellow, [Light Grey not shown]
+  Row 3: Red, Blue, Orange, Pink, Purple, Yellow, [Light Grey not shown]
+  
+  Page 2 Pattern:
+  Row 1: Red, Blue, Orange, Pink, Purple, Yellow, Light Grey, Black (DSGBH120 last)
+  Row 2: Red, Blue, Orange, Pink, Purple, Yellow, [Light Grey not shown]
+  Row 3: Red, Blue, Orange, Pink, Purple, Yellow, [Light Grey not shown]
 """
 
 import re
-import os
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 
-def extract_properties_enhanced(equipment_name, context_text, all_page_text):
+# ============================================================================
+# COLOR DEFINITIONS
+# ============================================================================
+
+# Define the color sequence for DSG equipment
+COLOR_SEQUENCE = [
+    ('Black', '333333'),      # 0 - Dark grey/black
+    ('Red', 'FFB3B3'),        # 1 - Light red/pink
+    ('Blue', 'B3D9FF'),       # 2 - Light blue  
+    ('Orange', 'FFD9B3'),     # 3 - Light orange
+    ('Pink', 'FFB3E6'),       # 4 - Pink
+    ('Purple', 'D9B3FF'),     # 5 - Light purple
+    ('Yellow', 'FFFF99'),     # 6 - Light yellow
+    ('Light Grey', 'E6E6E6'), # 7 - Light grey
+]
+
+# MVS color (Service Switchgear)
+MVS_COLOR = '333333'  # Black/Dark grey
+
+# ============================================================================
+
+
+def get_dsg_color_by_position(page_num, row_num, col_num, total_cols):
     """
-    Enhanced property extraction with multiple strategies
+    Get DSG color based on position in the diagram
     
     Parameters:
-    equipment_name (str): Name of equipment (e.g., 'DSG01001')
-    context_text (str): Immediate context around equipment
-    all_page_text (str): Full page text for extended search
+    page_num (int): Page number (0 or 1)
+    row_num (int): Row number within page (0, 1, 2)
+    col_num (int): Column number (0 to total_cols-1)
+    total_cols (int): Total columns in the row
     
     Returns:
-    str: Comma-separated properties
+    str: Hex color code
     """
-    properties = []
+    # Page 1, Row 1 (top row): Black first, then sequence
+    if page_num == 0 and row_num == 0:
+        if col_num == 0:
+            return COLOR_SEQUENCE[0][1]  # Black for first position
+        else:
+            # Shift by 1 for remaining positions
+            color_index = col_num % len(COLOR_SEQUENCE)
+            return COLOR_SEQUENCE[color_index][1]
     
-    # Strategy 1: Look in immediate context
+    # Page 2, Last row, Last column: Black
+    elif page_num == 1 and row_num == 0 and col_num == total_cols - 1:
+        return COLOR_SEQUENCE[0][1]  # Black for last position
+    
+    # All other DSG: Follow standard sequence
+    else:
+        color_index = (col_num + 1) % len(COLOR_SEQUENCE)  # Start from Red (index 1)
+        return COLOR_SEQUENCE[color_index][1]
+
+
+def extract_properties_enhanced(equipment_name, context_text, all_page_text):
+    """Enhanced property extraction with multiple strategies"""
+    properties = []
     search_text = context_text
     
-    # Strategy 2: If nothing found, search in larger context using equipment name as anchor
     if not any(pattern in context_text.upper() for pattern in ['KVA', 'KV', 'A', 'AMP']):
-        # Find the equipment name in full page text and get extended context
         pattern = re.escape(equipment_name)
         match = re.search(pattern, all_page_text)
         if match:
@@ -38,389 +91,194 @@ def extract_properties_enhanced(equipment_name, context_text, all_page_text):
             end = min(len(all_page_text), match.end() + 300)
             search_text = all_page_text[start:end]
     
-    # Extract KVA ratings (e.g., 3350KVA, 2000KVA, 1500KVA)
+    # Extract KVA ratings
     kva_matches = re.findall(r'\b(\d+)\s*KVA\b', search_text, re.IGNORECASE)
     if kva_matches:
-        # Take the largest KVA value (usually the main rating)
         max_kva = max([int(k) for k in kva_matches])
         properties.append(f"{max_kva}KVA")
     
-    # Extract Amperage (e.g., 600A, 1200A, 4000A)
+    # Extract Amperage
     amp_matches = re.findall(r'\b(\d{3,5})\s*(?:A\b|AMP)', search_text, re.IGNORECASE)
     if amp_matches:
-        # Take the largest amperage value
         max_amp = max([int(a) for a in amp_matches])
         properties.append(f"{max_amp}A")
     
-    # Extract Primary voltage (e.g., 34.5kV, 13.8kV, 4.16kV)
+    # Extract Primary voltage
     primary_volt_matches = re.findall(r'(?:PRIMARY[:\s]+)?(\d+\.?\d*)\s*kV', search_text, re.IGNORECASE)
     if primary_volt_matches:
-        # Usually take the first voltage mentioned
         properties.append(f"{primary_volt_matches[0]}kV")
     
-    # Extract Secondary voltage (e.g., 480Y/277V, 208Y/120V)
+    # Extract Secondary voltage
     secondary_volt_match = re.search(r'(?:SECONDARY[:\s]+)?([\d]+Y/[\d]+V)', search_text, re.IGNORECASE)
     if secondary_volt_match:
         properties.append(secondary_volt_match.group(1))
     
-    # Extract Voltage ratings in different formats (e.g., 480V, 208V)
-    # Only if no secondary voltage found yet
     if not any('Y/' in p for p in properties):
         voltage_matches = re.findall(r'\b(480|208|240|600)\s*V\b', search_text)
         if voltage_matches:
             properties.append(f"{voltage_matches[0]}V")
     
-    # DO NOT extract frequency (Hz) or phase information
-    # Only extract: Amperage (A), KVA, Primary Voltage (kV), Secondary Voltage (Y/V)
-    
     return ', '.join(properties) if properties else ''
 
 
 def extract_with_positions_pdfplumber(pdf_path):
-    """
-    Extract equipment with X,Y coordinates using pdfplumber.
-    Enhanced version with better property extraction.
-    
-    Parameters:
-    pdf_path: Path to PDF file (str or os.PathLike) or a file-like object.
-    
-    Returns:
-    list: List of equipment dictionaries with positions
-    """
+    """Extract equipment with positions and assign colors based on sequence"""
     try:
         import pdfplumber
         
         equipment_data = []
         seen_equipment = set()
-        
-        # Pattern for equipment names
         equipment_pattern = r"'([A-Z]{3}[A-Z0-9]{2}\d{3})'"
         
-        # Handle both file path and file-like object
-        if isinstance(pdf_path, (str, os.PathLike)):
-            pdf_obj = pdfplumber.open(pdf_path)
-        else:
-            # assume file-like, reset to start
-            try:
-                pdf_path.seek(0)
-            except Exception:
-                pass
-            pdf_obj = pdfplumber.open(pdf_path)
-        
-        with pdf_obj as pdf:
+        with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
-                # Get full page text for extended context searches
-                full_page_text = page.extract_text() or ""
+                print(f"\nProcessing page {page_num + 1}...")
                 
-                # Extract words with positions
+                full_page_text = page.extract_text()
                 words = page.extract_words(x_tolerance=3, y_tolerance=3)
                 
-                # Create text blocks grouped by proximity
+                # Extract equipment and sort by position
+                page_equipment = []
                 for i, word in enumerate(words):
                     text = word['text']
-                    
-                    # Check if this word contains equipment name
                     match = re.search(equipment_pattern, text)
+                    
                     if match:
                         equipment_name = match.group(1)
                         equipment_type = equipment_name[:3]
                         
-                        # Filter for MVS and DSG only
                         if equipment_type not in ['MVS', 'DSG']:
                             continue
                         
-                        # Skip duplicates
                         if equipment_name in seen_equipment:
                             continue
                         seen_equipment.add(equipment_name)
                         
-                        # Get surrounding text for properties (larger window)
+                        # Get surrounding text for properties
                         context_start = max(0, i - 10)
                         context_end = min(len(words), i + 40)
                         context_text = ' '.join([w['text'] for w in words[context_start:context_end]])
-                        
-                        # Extract properties with enhanced method
                         properties = extract_properties_enhanced(equipment_name, context_text, full_page_text)
                         
-                        equipment_data.append({
+                        page_equipment.append({
                             'Equipment': equipment_name,
                             'Type': equipment_type,
                             'Properties': properties,
-                            'Alternate From': '',
-                            'Primary From': '',
-                            'x_position': word['x0'],  # Left X coordinate
-                            'y_position': word['top'],  # Top Y coordinate
+                            'x_position': word['x0'],
+                            'y_position': word['top'],
                             'page': page_num
                         })
+                
+                # Sort by Y position (rows), then X position (columns)
+                page_equipment.sort(key=lambda x: (x['y_position'], x['x_position']))
+                
+                # Assign colors based on position
+                # Group by rows (similar Y coordinates)
+                rows = []
+                current_row = []
+                last_y = None
+                y_threshold = 50  # pixels tolerance for same row
+                
+                for eq in page_equipment:
+                    if last_y is None or abs(eq['y_position'] - last_y) < y_threshold:
+                        current_row.append(eq)
+                    else:
+                        if current_row:
+                            rows.append(current_row)
+                        current_row = [eq]
+                    last_y = eq['y_position']
+                
+                if current_row:
+                    rows.append(current_row)
+                
+                # Assign colors to DSG equipment
+                for row_idx, row in enumerate(rows):
+                    # Skip MVS rows
+                    if row[0]['Type'] == 'MVS':
+                        for eq in row:
+                            eq['Color'] = MVS_COLOR
+                            eq['ColorName'] = 'Black'
+                            print(f"  ✓ {eq['Equipment']}: Black (MVS)")
+                    else:
+                        # DSG row - assign sequential colors
+                        for col_idx, eq in enumerate(row):
+                            color_hex = get_dsg_color_by_position(page_num, row_idx - 1, col_idx, len(row))
+                            color_name = next((name for name, hex_code in COLOR_SEQUENCE if hex_code == color_hex), "Unknown")
+                            eq['Color'] = color_hex
+                            eq['ColorName'] = color_name
+                            print(f"  ✓ {eq['Equipment']}: {color_name} (#{color_hex})")
+                
+                # Add to main list
+                equipment_data.extend(page_equipment)
         
-        # Sort by page, then Y (top to bottom), then X (left to right)
+        # Sort final list by page, Y, X
         equipment_data.sort(key=lambda x: (x['page'], x['y_position'], x['x_position']))
+        
+        # Add empty connection fields
+        for eq in equipment_data:
+            eq['Alternate From'] = ''
+            eq['Primary From'] = ''
         
         return equipment_data
         
     except Exception as e:
         print(f"pdfplumber extraction failed: {e}")
+        import traceback
+        traceback.print_exc()
         return None
-
-
-def extract_with_positions_pypdf2(pdf_path):
-    """
-    Extract equipment with approximate positions using PyPDF2.
-    Enhanced version with better property extraction.
-    
-    Parameters:
-    pdf_path: Path to PDF file (str or os.PathLike) or a file-like object.
-    
-    Returns:
-    list: List of equipment dictionaries
-    """
-    try:
-        import PyPDF2
-        
-        equipment_data = []
-        seen_equipment = set()
-        
-        equipment_pattern = r"'([A-Z]{3}[A-Z0-9]{2}\d{3})'"
-        
-        # Handle both file path and file-like object
-        if isinstance(pdf_path, (str, os.PathLike)):
-            file_obj = open(pdf_path, 'rb')
-            close_after = True
-        else:
-            file_obj = pdf_path
-            close_after = False
-            try:
-                file_obj.seek(0)
-            except Exception:
-                pass
-        
-        try:
-            pdf_reader = PyPDF2.PdfReader(file_obj)
-            
-            for page_num, page in enumerate(pdf_reader.pages):
-                full_page_text = page.extract_text() or ""
-                if not full_page_text:
-                    continue
-                
-                # Split into lines and process
-                lines = full_page_text.split('\n')
-                
-                for line_num, line in enumerate(lines):
-                    matches = re.finditer(equipment_pattern, line)
-                    
-                    for match in matches:
-                        equipment_name = match.group(1)
-                        equipment_type = equipment_name[:3]
-                        
-                        # Filter for MVS and DSG only
-                        if equipment_type not in ['MVS', 'DSG']:
-                            continue
-                        
-                        # Skip duplicates
-                        if equipment_name in seen_equipment:
-                            continue
-                        seen_equipment.add(equipment_name)
-                        
-                        # Get context from surrounding lines (larger window)
-                        start_line = max(0, line_num - 5)
-                        end_line = min(len(lines), line_num + 10)
-                        context_text = ' '.join(lines[start_line:end_line])
-                        
-                        # Extract properties with enhanced method
-                        properties = extract_properties_enhanced(equipment_name, context_text, full_page_text)
-                        
-                        equipment_data.append({
-                            'Equipment': equipment_name,
-                            'Type': equipment_type,
-                            'Properties': properties,
-                            'Alternate From': '',
-                            'Primary From': '',
-                            'x_position': match.start(),  # Approximate position in line
-                            'y_position': line_num,
-                            'page': page_num
-                        })
-        finally:
-            if close_after:
-                file_obj.close()
-        
-        # Sort by page, line, and position in line
-        equipment_data.sort(key=lambda x: (x['page'], x['y_position'], x['x_position']))
-        
-        return equipment_data
-        
-    except Exception as e:
-        print(f"PyPDF2 extraction failed: {e}")
-        return None
-
-
-def identify_dsg_groups(equipment_data):
-    """
-    Identify DSG groups based on their naming pattern and Y-position.
-    DSGs with same 5th character (group letter) and similar Y-position form a group.
-    
-    Parameters:
-    equipment_data (list): List of equipment dictionaries
-    
-    Returns:
-    dict: Dictionary with group identifiers as keys and lists of DSG items as values
-    """
-    
-    dsg_items = [item for item in equipment_data if item['Type'] == 'DSG']
-    
-    # Group DSGs by their 4th and 5th characters (system identifier) and page
-    # e.g., DSGAA110 -> 'AA', DSGCA110 -> 'CA'
-    groups = {}
-    
-    for item in dsg_items:
-        equipment_name = item['Equipment']
-        page = item['page']
-        
-        # Extract group identifier (4th character)
-        group_letter = equipment_name[3]  # 4th character: A, B, C, D, E, F
-        
-        # Create unique group key with page number
-        group_key = f"Page{page+1}_Group{group_letter}"
-        
-        if group_key not in groups:
-            groups[group_key] = []
-        
-        groups[group_key].append(item)
-    
-    # Sort each group by x_position (left to right)
-    for group_key in groups:
-        groups[group_key].sort(key=lambda x: x['x_position'])
-    
-    return groups
 
 
 def populate_connections(equipment_data):
-    """
-    Populate Primary From and Alternate From for all DSG equipment.
+    """Populate Primary From and Alternate From for DSG equipment"""
+    mvs_equipment = [item for item in equipment_data if item['Type'] == 'MVS']
+    dsg_equipment = [item for item in equipment_data if item['Type'] == 'DSG']
     
-    Logic:
-    - Leftmost DSG: Primary = Leftmost MVS, Alternate = Next DSG (right)
-    - Middle DSGs: Primary = Previous DSG (left), Alternate = Next DSG (right)
-    - Rightmost DSG: Primary = Rightmost MVS, Alternate = Previous DSG (left)
+    if not mvs_equipment:
+        return equipment_data
     
-    Parameters:
-    equipment_data (list): List of equipment dictionaries
+    # Group DSG by page
+    dsg_by_page = {}
+    for dsg in dsg_equipment:
+        page = dsg['page']
+        if page not in dsg_by_page:
+            dsg_by_page[page] = []
+        dsg_by_page[page].append(dsg)
     
-    Returns:
-    list: Updated equipment data with connections populated
-    """
+    mvs_equipment.sort(key=lambda x: (x['page'], x['y_position'], x['x_position']))
     
-    # Separate MVS and DSG items
-    mvs_items = [item for item in equipment_data if item['Type'] == 'MVS']
-    
-    # Group MVS by page
-    mvs_by_page = {}
-    for item in mvs_items:
-        page = item['page']
-        if page not in mvs_by_page:
-            mvs_by_page[page] = []
-        mvs_by_page[page].append(item)
-    
-    # Sort MVS items by x_position for each page
-    for page in mvs_by_page:
-        mvs_by_page[page].sort(key=lambda x: x['x_position'])
-    
-    # Identify DSG groups
-    dsg_groups = identify_dsg_groups(equipment_data)
-    
-    print("\n" + "="*70)
-    print("CONNECTION MAPPING")
-    print("="*70)
-    
-    # Process each DSG group
-    for group_key, dsg_list in dsg_groups.items():
-        print(f"\n{group_key}: {len(dsg_list)} DSGs")
+    # Assign connections
+    for page, dsgs_on_page in dsg_by_page.items():
+        mvs_on_page = [mvs for mvs in mvs_equipment if mvs['page'] == page]
         
-        if len(dsg_list) == 0:
-            continue
+        if not mvs_on_page and mvs_equipment:
+            mvs_on_page = mvs_equipment[:2] if len(mvs_equipment) >= 2 else mvs_equipment
         
-        # Get page number for this group
-        page = dsg_list[0]['page']
-        
-        # Get MVS items for this page
-        page_mvs = mvs_by_page.get(page, [])
-        
-        if len(page_mvs) < 2:
-            print(f"  ⚠️  Warning: Less than 2 MVS items found on page {page+1}")
-            continue
-        
-        leftmost_mvs = page_mvs[0]['Equipment']
-        rightmost_mvs = page_mvs[-1]['Equipment']
-        
-        # Process each DSG in the group
-        for i, dsg in enumerate(dsg_list):
-            if i == 0:
-                # Leftmost DSG
-                dsg['Primary From'] = leftmost_mvs
-                if len(dsg_list) > 1:
-                    dsg['Alternate From'] = dsg_list[i + 1]['Equipment']
-                print(f"  {dsg['Equipment']}: Primary={leftmost_mvs}, Alternate={dsg['Alternate From']}")
-                
-            elif i == len(dsg_list) - 1:
-                # Rightmost DSG
-                dsg['Primary From'] = rightmost_mvs
-                dsg['Alternate From'] = dsg_list[i - 1]['Equipment']
-                print(f"  {dsg['Equipment']}: Primary={rightmost_mvs}, Alternate={dsg['Alternate From']}")
-                
-            else:
-                # Middle DSGs
-                dsg['Primary From'] = dsg_list[i - 1]['Equipment']
-                dsg['Alternate From'] = dsg_list[i + 1]['Equipment']
-                print(f"  {dsg['Equipment']}: Primary={dsg['Primary From']}, Alternate={dsg['Alternate From']}")
+        for dsg in dsgs_on_page:
+            if len(mvs_on_page) >= 2:
+                dsg['Primary From'] = mvs_on_page[0]['Equipment']
+                dsg['Alternate From'] = mvs_on_page[1]['Equipment']
+            elif len(mvs_on_page) == 1:
+                dsg['Primary From'] = mvs_on_page[0]['Equipment']
     
     return equipment_data
 
 
 def extract_from_pdf(pdf_path):
-    """
-    Extract equipment data from PDF file in left-to-right order.
-    Tries pdfplumber first (best for coordinates), then PyPDF2.
-    
-    Parameters:
-    pdf_path: Path to input PDF (str or os.PathLike) or a file-like object.
-    
-    Returns:
-    list: List of equipment dictionaries sorted by position
-    """
-    
-    print("Attempting coordinate-based extraction with pdfplumber...")
+    """Extract equipment data from PDF with sequential colors"""
+    print("Extracting equipment with sequential color assignment...")
     equipment_data = extract_with_positions_pdfplumber(pdf_path)
     
     if equipment_data is not None and len(equipment_data) > 0:
-        print(f"✓ Successfully extracted {len(equipment_data)} items with pdfplumber")
-        return equipment_data
-    
-    # If pdf_path is a file-like object, reset pointer before fallback
-    try:
-        if not isinstance(pdf_path, (str, os.PathLike)):
-            pdf_path.seek(0)
-    except Exception:
-        pass
-    
-    print("Falling back to PyPDF2...")
-    equipment_data = extract_with_positions_pypdf2(pdf_path)
-    
-    if equipment_data is not None and len(equipment_data) > 0:
-        print(f"✓ Successfully extracted {len(equipment_data)} items with PyPDF2")
+        print(f"\n✓ Successfully extracted {len(equipment_data)} items")
+        colors_found = sum(1 for item in equipment_data if item.get('Color'))
+        print(f"✓ Colors assigned to {colors_found} items")
         return equipment_data
     
     return None
 
 
 def create_excel_file(equipment_data, output_path):
-    """
-    Create formatted Excel file from equipment data.
-    
-    Parameters:
-    equipment_data (list): List of equipment dictionaries
-    output_path (str): Output file path
-    """
-    
-    # Remove position data before creating DataFrame
+    """Create formatted Excel file WITH COLOR FORMATTING"""
     clean_data = []
     for item in equipment_data:
         clean_data.append({
@@ -428,13 +286,13 @@ def create_excel_file(equipment_data, output_path):
             'Type': item['Type'],
             'Properties': item['Properties'],
             'Alternate From': item['Alternate From'],
-            'Primary From': item['Primary From']
+            'Primary From': item['Primary From'],
+            'Color': item.get('Color'),
+            'ColorName': item.get('ColorName', '')
         })
     
-    # Create DataFrame (already sorted by position)
     df = pd.DataFrame(clean_data)
     
-    # Create Excel workbook
     wb = Workbook()
     sheet = wb.active
     sheet.title = 'Equipment Data'
@@ -454,8 +312,9 @@ def create_excel_file(equipment_data, output_path):
         cell.fill = header_fill
         cell.alignment = header_alignment
     
-    # Add data
-    for row_data in clean_data:
+    # Add data WITH COLOR FORMATTING
+    for idx, row_data in enumerate(clean_data):
+        row_num = idx + 2
         sheet.append([
             row_data['Equipment'],
             row_data['Type'],
@@ -463,6 +322,30 @@ def create_excel_file(equipment_data, output_path):
             row_data['Alternate From'],
             row_data['Primary From']
         ])
+        
+        # Apply color if exists
+        if row_data.get('Color'):
+            color_hex = row_data['Color']
+            row_fill = PatternFill(start_color=color_hex, end_color=color_hex, fill_type='solid')
+            
+            for col_num in range(1, 6):
+                cell = sheet.cell(row=row_num, column=col_num)
+                cell.fill = row_fill
+                
+                # Adjust text color based on background brightness
+                try:
+                    r = int(color_hex[0:2], 16)
+                    g = int(color_hex[2:4], 16)
+                    b = int(color_hex[4:6], 16)
+                    brightness = (0.299 * r + 0.587 * g + 0.114 * b)
+                    
+                    if brightness < 128:
+                        cell.font = Font(color='FFFFFF', bold=False)
+                    else:
+                        cell.font = Font(color='000000', bold=False)
+                except Exception as e:
+                    print(f"Warning: Invalid color hex '{color_hex}': {e}")
+                    cell.font = Font(color='000000', bold=False)
     
     # Column widths
     sheet.column_dimensions['A'].width = 20
@@ -471,7 +354,7 @@ def create_excel_file(equipment_data, output_path):
     sheet.column_dimensions['D'].width = 20
     sheet.column_dimensions['E'].width = 20
     
-    # Borders and alignment
+    # Borders
     thin_border = Border(
         left=Side(style='thin'),
         right=Side(style='thin'),
@@ -485,19 +368,37 @@ def create_excel_file(equipment_data, output_path):
             if cell.row > 1:
                 cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     
-    # Save
     wb.save(output_path)
     
-    return df
+    df_return = df.drop(columns=['Color', 'ColorName'])
+    return df_return
 
 
 def print_summary(df, equipment_data):
-    """Print summary of extracted data with connection info"""
+    """Print summary with color statistics"""
     print("\n" + "="*70)
     print("EXTRACTION SUMMARY")
     print("="*70)
     
     print(f"\n✓ Total records: {len(df)}")
+    
+    with_colors = sum(1 for item in equipment_data if item.get('Color'))
+    print(f"✓ Equipment with colors: {with_colors}/{len(equipment_data)}")
+    
+    # Color distribution
+    print(f"\nColor Distribution:")
+    color_counts = {}
+    for item in equipment_data:
+        if item.get('ColorName'):
+            color_name = item['ColorName']
+            if color_name not in color_counts:
+                color_counts[color_name] = 0
+            color_counts[color_name] += 1
+    
+    for color_name in sorted(color_counts.keys()):
+        count = color_counts[color_name]
+        print(f"  {color_name}: {count} items")
+    
     print(f"\nEquipment breakdown:")
     
     type_names = {
@@ -509,68 +410,50 @@ def print_summary(df, equipment_data):
         count = len(df[df['Type'] == eq_type])
         type_name = type_names.get(eq_type, 'Unknown')
         
-        # Count how many have properties
         with_props = len([item for item in equipment_data if item['Type'] == eq_type and item['Properties']])
+        type_with_colors = len([item for item in equipment_data if item['Type'] == eq_type and item.get('Color')])
         
-        # Count how many DSGs have connections
         if eq_type == 'DSG':
             with_connections = len([item for item in equipment_data 
                                    if item['Type'] == eq_type 
                                    and (item['Primary From'] or item['Alternate From'])])
-            print(f"  {eq_type} ({type_name}): {count} items ({with_props} with properties, {with_connections} with connections)")
+            print(f"  {eq_type} ({type_name}): {count} items")
+            print(f"    - With properties: {with_props}")
+            print(f"    - With connections: {with_connections}")
+            print(f"    - With colors: {type_with_colors}")
         else:
-            print(f"  {eq_type} ({type_name}): {count} items ({with_props} with properties)")
-    
-    # Check for items without properties
-    no_props = [item for item in equipment_data if not item['Properties']]
-    if no_props:
-        print(f"\n⚠️  Warning: {len(no_props)} items found without properties:")
-        for item in no_props:
-            print(f"   - {item['Equipment']}")
-    
-    # Check for DSGs without connections
-    dsg_no_connections = [item for item in equipment_data 
-                          if item['Type'] == 'DSG' 
-                          and not (item['Primary From'] or item['Alternate From'])]
-    if dsg_no_connections:
-        print(f"\n⚠️  Warning: {len(dsg_no_connections)} DSGs found without connections:")
-        for item in dsg_no_connections:
-            print(f"   - {item['Equipment']}")
+            print(f"  {eq_type} ({type_name}): {count} items")
+            print(f"    - With properties: {with_props}")
+            print(f"    - With colors: {type_with_colors}")
 
 
 def main(pdf_path, output_path):
-    """
-    Main extraction function.
-    Extracts SERVICE SWITCHGEAR (MVS) and DISTRIBUTION SWITCHGEAR (DSG) in left-to-right order.
-    Automatically populates Primary From and Alternate From connections.
-    
-    Parameters:
-    pdf_path: Path to input PDF (str or os.PathLike) or a file-like object.
-    output_path (str): Path to output Excel file
-    """
-    
+    """Main extraction function with automatic sequential coloring"""
     print("=" * 70)
-    print("Electrical Equipment Data Extractor - With Connection Mapping")
-    print("Extracts MVS & DSG with automatic Primary/Alternate connections")
+    print("Electrical Equipment Data Extractor - SEQUENTIAL COLOR ASSIGNMENT")
+    print("Colors assigned automatically based on equipment position")
     print("=" * 70)
     print(f"\nInput PDF: {pdf_path}")
     print(f"Output Excel: {output_path}\n")
     
-    # Extract data with positions
+    print("Color Logic:")
+    print("  - MVS (Service Switchgear): Black")
+    print("  - DSG (Distribution Switchgear): Sequential colors by position")
+    print("  - Page 1, Row 1: Black first, then Red, Blue, Orange, Pink, Purple, Yellow")
+    print("  - Page 2, Last position: Black")
+    print("  - All other DSG: Red, Blue, Orange, Pink, Purple, Yellow sequence\n")
+    
     equipment_data = extract_from_pdf(pdf_path)
     
     if equipment_data is None or len(equipment_data) == 0:
-        print("\n✗ No MVS or DSG equipment found in PDF")
+        print("\n✗ No MVS or DSG equipment found")
         return None
     
-    # Populate connections for DSG items
     equipment_data = populate_connections(equipment_data)
     
-    # Create Excel file
     df = create_excel_file(equipment_data, output_path)
-    print(f"\n✓ Excel file created: {output_path}")
+    print(f"\n✓ Excel file created with sequential color formatting: {output_path}")
     
-    # Print summary
     print_summary(df, equipment_data)
     
     print("\n" + "=" * 70)
@@ -581,8 +464,14 @@ def main(pdf_path, output_path):
 
 
 if __name__ == "__main__":
-    # Usage example with file path
-    PDF_PATH = r'E:\Ai Data House Intern\Austin-hurt-label Extractor\Code\newcode-file\MEDIUM VOLTAGE.pdf'
-    OUTPUT_PATH = r'E:\Ai Data House Intern\Austin-hurt-label Extractor\Code\newcode-file\equipment_data_complete.xlsx'
+    PDF_PATH = 'D:/AI Data housde/Electrical Diagram Extractor/MEDIUM VOLTAGE.pdf'
+    OUTPUT_PATH = 'D:/AI Data housde/Electrical Diagram Extractor/equipment_data_sequential_colors.xlsx'
     
-    df, equipment_data = main(PDF_PATH, OUTPUT_PATH)
+    try:
+        import pdfplumber
+        print("✓ pdfplumber is installed\n")
+    except ImportError:
+        print("⚠️  pdfplumber not installed!")
+        print("Install with: pip install pdfplumber\n")
+    
+    result = main(PDF_PATH, OUTPUT_PATH)
